@@ -9,6 +9,7 @@ const init = async () => {
   await faceDetectionNet.loadFromDisk(path.resolve(__dirname, '../weights'))
   await faceapi.nets.faceLandmark68Net.loadFromDisk(path.resolve(__dirname, '../weights'))
   await faceapi.nets.faceRecognitionNet.loadFromDisk(path.resolve(__dirname, '../weights'))
+  console.log('Dataset loaded')
 }
 init()
 
@@ -19,7 +20,9 @@ const compare2Imgs = async (resultsRef, resultsQuery) => {
   resultsQuery.map(res => {
     const bestMatch = faceMatcher.findBestMatch(res.descriptor)
     if (bestMatch.label !== 'unknown' && bestMatch.distance > minDistance) {
+      const matchDescriptor = faceMatcher.labeledDescriptors.find(descriptor => descriptor.label === bestMatch.label)
       res.appear = res.appear ? (res.appear + 1) : 2
+      res.matchedDescriptors = [...(res.matchedDescriptors || []), matchDescriptor.descriptors]
       res.label = bestMatch.label
     }
   })
@@ -63,13 +66,11 @@ const selectDetection = async templateImages => {
     // no one appear more than once, choose random (first one)
     for (let i = 0; i < templateDetections.length; i++) {
       if (templateDetections[i].length !== 0) {
-        chosenDetection = templateDetections[i][0]
+        chosenDetections = templateDetections[i][0]
         break
       }
     }
-    if (!chosenDetection) return res.send({
-      message: 'No person in templates'
-    })
+    return null
   } else {
     // there will be one person to be chosen
     let maxAppearIndex = 0
@@ -101,6 +102,7 @@ const isAppear = async (faceMatcher, image) => {
   }
   return false
 }
+
 const checkFriendAppearance = async (faceMatcher, images) => {
   let count = 0;
   for (let i = 0; i < images.length; i++) {
@@ -109,24 +111,118 @@ const checkFriendAppearance = async (faceMatcher, images) => {
   }
   return count
 }
-exports.detect = async (req, res, next) => {
-  const selectedDetection = await selectDetection(req.body.templateImages)
-  const faceMatcher = new faceapi.FaceMatcher([new faceapi.LabeledFaceDescriptors(
-    'person',
-    [selectedDetection.descriptor]
-  ),])
+
+/**
+ * get max distance from image
+ * @param {FaceMatcher} faceMatcher 
+ * @param {url} image 
+ */
+const getMaxDistance = async (faceMatcher, image) => {
+  const minDistance = 0.0
+  const loadedImage = await canvas.loadImage(image)
+  const resultsQuery = await faceapi.detectAllFaces(loadedImage, faceDetectionOptions)
+    .withFaceLandmarks()
+    .withFaceDescriptors()
+
+  let maxDistance = 0
+  for (let i = 0; i < resultsQuery.length; i++) {
+    const bestMatch = faceMatcher.findBestMatch(resultsQuery[i].descriptor)
+    if (bestMatch.label !== 'unknown' && bestMatch.distance > minDistance) {
+      if (bestMatch.distance > maxDistance) {
+        maxDistance = bestMatch.distance
+      }
+    }
+  }
+  return maxDistance
+}
+/**
+ * get image that have largest distance
+ * @param {FaceMatcher} faceMatcher 
+ * @param {urls} images 
+ */
+const getMaxDistanceImage = async (faceMatcher, images) => {
+  let maxDistance = 0
+  let maxDistanceImageIndex = -1
+  let appearCount = 0
+  for (let i = 0; i < images.length; i++) {
+    const distance = await getMaxDistance(faceMatcher, images[i])
+    if (distance > 0) appearCount++
+    if (distance > maxDistance) {
+      maxDistance = distance
+      maxDistanceImageIndex = i
+    }
+  }
+  return {
+    maxDistance,
+    index: maxDistanceImageIndex,
+    appearCount,
+  }
+}
+const getMaxDistanceFriend = async (faceMatcher, friends) => {
+  let maxDistance = 0
+  let maxDistanceFriendIndex = -1
+  for (let i = 0; i < friends.length; i++) {
+    const distance = (await getMaxDistanceImage(faceMatcher, friends[i].images)).maxDistance
+    if (distance > maxDistance) {
+      maxDistance = distance
+      maxDistanceFriendIndex = i
+    }
+  }
+  return {
+    maxDistance,
+    index: maxDistanceFriendIndex,
+  }
+}
+const getMaxAppearCountFriend = async (faceMatcher, friends) => {
+  let maxAppearCount = 0
+  let maxAppearCountFriendIndex = -1
+  let maxDistance = 0
+  for (let i = 0; i < friends.length; i++) {
+    const maxDistanceImage = await getMaxDistanceImage(faceMatcher, friends[i].images)
+    if (maxDistanceImage.appearCount > maxAppearCount) {
+      maxAppearCount = maxDistanceImage.appearCount
+      maxAppearCountFriendIndex = i
+      maxDistance = maxDistanceImage.maxDistance
+    }
+  }
+  return {
+    maxDistance,
+    index: maxAppearCountFriendIndex,
+  }
+}
+
+const getMaxAppearFriendIndex = async (faceMatcher, friends) => {
   let maxAppearance = 0
   let maxAppearFriendIndex = -1
-  const friends = req.body.listFriends
   for (let i = 0; i < friends.length; i++) {
     console.log(`checking ${friends[i].name}`)
     const count = await checkFriendAppearance(faceMatcher, friends[i].images)
-    
+
     if (count > maxAppearance) {
       maxAppearFriendIndex = i
       maxAppearance = count
     }
   }
-  if (maxAppearFriendIndex !== -1) return res.status(200).send(req.body.listFriends[maxAppearFriendIndex].name)
-  res.status(200).send({message: 'No friend is valid'})
+  return maxAppearFriendIndex
+}
+exports.detect = async (req, res, next) => {
+  const selectedDetection = await selectDetection(req.body.templateImages)
+  const selectedDetectionDescriptors = [selectedDetection.descriptor]
+  selectedDetection.matchedDescriptors.forEach(descriptors => {
+    descriptors.forEach(descriptor => selectedDetectionDescriptors.push(descriptor))
+  })
+  const faceMatcher = new faceapi.FaceMatcher([new faceapi.LabeledFaceDescriptors(
+    'person',
+    // selectedDetections.map(d => d.descriptor)
+    selectedDetectionDescriptors
+  ),])
+  const friends = req.body.listFriends
+  // const maxAppearFriendIndex = await getMaxAppearFriendIndex(faceMatcher, friends)
+  // if (maxAppearFriendIndex !== -1) return res.status(200).send(req.body.listFriends[maxAppearFriendIndex].name)
+
+  const maxAppearCountFriend = await getMaxAppearCountFriend(faceMatcher, friends)
+  if (maxAppearCountFriend.index !== -1) {
+    return res.status(200).send(`${friends[maxAppearCountFriend.index].name}|${maxAppearCountFriend.maxDistance}`)
+  }
+  res.status(200).send({ message: 'No friend is valid' })
 }
