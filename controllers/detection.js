@@ -256,7 +256,7 @@ exports.checkPayload = (req, res, next) => {
     })
   } catch (err) {
     console.error('checkPayload', err)
-    return res.status(401).send(err)
+    return res.status(401).send({ message: err.message })
   }
   // check friends images
   try {
@@ -275,7 +275,7 @@ exports.checkPayload = (req, res, next) => {
     })
   } catch (err) {
     console.error('checkPayload', err)
-    return res.status(401).send(err)
+    return res.status(401).send({ message: err.message })
   }
   next()
 }
