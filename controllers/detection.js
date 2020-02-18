@@ -239,3 +239,43 @@ exports.detect = async (req, res, next) => {
   }
   res.status(200).send({ message: 'No friend is valid' })
 }
+
+exports.checkPayload = (req, res, next) => {
+  // check templateImages
+  try {
+    req.body.templateImages = req.body.templateImages.map(image => {
+      try {
+        const splitted = image.split('|')
+        if (splitted.length !== 2) {
+          throw new Error(`Invalid image: ${image}`)
+        }
+        return `${splitted[0]}${splitted[1]}`
+      } catch (err) {
+        throw err
+      }
+    })
+  } catch (err) {
+    console.error('checkPayload', err)
+    return res.status(401).send(err)
+  }
+  // check friends images
+  try {
+    req.body.listFriends.forEach(friend => {
+      friend.images = friend.images.map(image => {
+        try {
+          const splitted = image.split('|')
+          if (splitted.length !== 2) {
+            throw new Error(`Invalid image: ${image}`)
+          }
+          return `${splitted[0]}${splitted[1]}`
+        } catch (err) {
+          throw err
+        }
+      })
+    })
+  } catch (err) {
+    console.error('checkPayload', err)
+    return res.status(401).send(err)
+  }
+  next()
+}
