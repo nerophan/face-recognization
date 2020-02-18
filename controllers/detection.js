@@ -177,14 +177,27 @@ const getMaxAppearCountFriend = async (faceMatcher, friends) => {
   let maxAppearCount = 0
   let maxAppearCountFriendIndex = -1
   let maxDistance = 0
-  for (let i = 0; i < friends.length; i++) {
-    const maxDistanceImage = await getMaxDistanceImage(faceMatcher, friends[i].images)
-    if (maxDistanceImage.appearCount > maxAppearCount) {
-      maxAppearCount = maxDistanceImage.appearCount
-      maxAppearCountFriendIndex = i
-      maxDistance = maxDistanceImage.maxDistance
-    }
+
+  try {
+    await Promise.all(friends.map(async (friend, i) => {
+      const maxDistanceImage = await getMaxDistanceImage(faceMatcher, friend.images)
+      if (maxDistanceImage.appearCount > maxAppearCount) {
+        maxAppearCount = maxDistanceImage.appearCount
+        maxAppearCountFriendIndex = i
+        maxDistance = maxDistanceImage.maxDistance
+      }
+    }))
+  } catch (err) {
+    console.error(err)
   }
+  // for (let i = 0; i < friends.length; i++) {
+  //   const maxDistanceImage = await getMaxDistanceImage(faceMatcher, friends[i].images)
+  //   if (maxDistanceImage.appearCount > maxAppearCount) {
+  //     maxAppearCount = maxDistanceImage.appearCount
+  //     maxAppearCountFriendIndex = i
+  //     maxDistance = maxDistanceImage.maxDistance
+  //   }
+  // }
   return {
     maxDistance,
     index: maxAppearCountFriendIndex,
