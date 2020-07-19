@@ -22,7 +22,7 @@
     "express": "^4.17.1",
     "face-api.js": "^0.22.1",
     "face-recognition": "^0.9.4",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "node-pre-gyp": "^0.14.0",
     "request": "^2.88.2",
     "request-promise": "^4.2.5"
